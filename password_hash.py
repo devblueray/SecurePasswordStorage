@@ -18,7 +18,7 @@ class PasswordHasher:
         self.storage = boto3.resource('dynamodb') 
         self.kmsClient = boto3.client('kms')
         self.table = self.storage.Table('passwordstorage')
-
+        self.cipher = AES.new(self.key.encode('utf8'), AES.MODE_ECB)
     #This method gets invoked from the encode method and is fed a hex string to encrypt using the KMS key
     def kmsEncrypt(self,hex):
         ciphertext = self.kmsClient.encrypt(
@@ -36,7 +36,7 @@ class PasswordHasher:
             }
         )    
     
-    # This method just gets the data from dynano based on the clientId and returns it (at this point the data is in hex form)
+    # This method gets the data from dynano based on the clientId and returns it (at this point the data is in hex form)
     def storage_read(self,id):
         data = self.table.get_item(
             Key={
@@ -54,21 +54,19 @@ class PasswordHasher:
         response = self.kmsClient.decrypt(
             CiphertextBlob=binCipherText
         )
-        return response['Plaintext'].decode('utf-8') #Get KMS decrypted secret back from 
+        return response['Plaintext'].decode('utf-8') #Get KMS decrypted secret back from   
 
 
 
     def encode(self, id, password):
         self.id = id
-        cipher = AES.new(self.key.encode('utf8'), AES.MODE_ECB)
-        msg = cipher.encrypt(pad(password.encode('ascii'), self.BLOCK_SIZE))
+        msg = self.cipher.encrypt(pad(password.encode('ascii'), self.BLOCK_SIZE))
         self.kmsEncrypt(msg.hex())
     
     def decode(self, id):
         data = self.kmsDecrypt(id)
         binmsg = bytes.fromhex(data)
-        decipher = AES.new(self.key.encode('utf=8'), AES.MODE_ECB)
-        msg_dec = decipher.decrypt(binmsg)
+        msg_dec = self.cipher.decrypt(binmsg)
         decrypted = unpad(msg_dec, self.BLOCK_SIZE)
         return decrypted.decode('ascii')
 
