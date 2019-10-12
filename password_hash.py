@@ -7,23 +7,23 @@ import argparse
 import click 
 
 class PasswordHasher:
-    # 1. Standard __init__stuff (set variables for boto clients/resources, etc)
-    # 2. self.key = the hash key to use, it's stored in parameter store with it's own kms key
+    #  Standard __init__stuff (set variables for boto clients/resources, etc)
     def __init__(self):
         os.environ['ENV'] = 'stage'
         client = lu.LambdaUtils()
         secrets, err = client.get_secrets(['/passwordmanager/hashkey'])
         self.BLOCK_SIZE = 32 # Bytes
-        self.key = secrets['/passwordmanager/hashkey']
+        self.key = secrets['/passwordmanager/hashkey'] # the hash key to use, it's stored in parameter store with it's own kms key
         self.storage = boto3.resource('dynamodb') 
         self.kmsClient = boto3.client('kms')
         self.table = self.storage.Table('passwordstorage')
-        self.cipher = AES.new(self.key.encode('utf8'), AES.MODE_ECB)
-    #This method gets invoked from the encode method and is fed a hex string to encrypt using the KMS key
+        self.cipher = AES.new(self.key.encode('utf8'), AES.MODE_ECB) #setting up the cipher using aes in ecb mode
+
+    # This method gets invoked from the encode method and is fed a hex string to encrypt using the KMS key
     def kmsEncrypt(self,hex):
         ciphertext = self.kmsClient.encrypt(
             KeyId='d76d0d5b-14e5-4dfb-aab8-15954ec6bc71',  #KMS key id
-            Plaintext=hex,
+            Plaintext=hex, # hex value of the binary string generated from encode
         )
         self.storage_write(self.id, ciphertext["CiphertextBlob"].hex()) #Turn binary output to hex.    
     
@@ -60,13 +60,13 @@ class PasswordHasher:
 
     def encode(self, id, password):
         self.id = id
-        msg = self.cipher.encrypt(pad(password.encode('ascii'), self.BLOCK_SIZE))
-        self.kmsEncrypt(msg.hex())
+        msg = self.cipher.encrypt(pad(password.encode('ascii'), self.BLOCK_SIZE)) #Sets up the padding to add data to make input len a multiple of block size then encrypts the data.
+        self.kmsEncrypt(msg.hex()) # Call the kmsEncrypt method to encrypt the hex version of the encrypted password
     
     def decode(self, id):
-        data = self.kmsDecrypt(id)
-        binmsg = bytes.fromhex(data)
-        msg_dec = self.cipher.decrypt(binmsg)
+        data = self.kmsDecrypt(id) # Calls the kmsDecrypt method with the id of the client.  Pulls KMS encrypted value from store, decrypts it into form that was created by encode method
+        binmsg = bytes.fromhex(data) # Convert the hex stored in DB back to binary
+        msg_dec = self.cipher.decrypt(binmsg) #
         decrypted = unpad(msg_dec, self.BLOCK_SIZE)
         return decrypted.decode('ascii')
 
